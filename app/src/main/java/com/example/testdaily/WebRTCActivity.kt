@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.Space
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -41,6 +42,8 @@ class WebRTCActivity: AppCompatActivity() {
     private val profileActiveCamera = SubscriptionProfile("activeCamera")
     private val profileActiveScreenShare = SubscriptionProfile("activeScreenShare")
     private val roomUrl = "https://testingdailygenflix.daily.co/testing"
+    private var localParticipant: Participant? = null
+    private var cameraFacing = CameraFacing.Front
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -73,7 +76,7 @@ class WebRTCActivity: AppCompatActivity() {
         }
 
         override fun onInputsUpdated(inputSettings: InputSettings) {
-//            updateLocalVideoState()
+            updateLocalVideoState()
         }
 
         override fun onPublishingUpdated(publishingSettings: PublishingSettings) {
@@ -113,6 +116,13 @@ class WebRTCActivity: AppCompatActivity() {
         localVideoView = findViewById(R.id.local_video_view)
         remoteVideoView = findViewById(R.id.remote_video_view)
         space = findViewById(R.id.space)
+        findViewById<Button>(R.id.rotateCamera).setOnClickListener {
+            cameraFacing = if (cameraFacing == CameraFacing.Rear)
+                CameraFacing.Front
+            else
+                CameraFacing.Rear
+            updateInputSettings(cameraFacing)
+        }
 
 //        initCallClient()
 
@@ -121,7 +131,8 @@ class WebRTCActivity: AppCompatActivity() {
 
     private fun updateParticipantVideoView(participant: Participant) {
         if (participant.info.isLocal) {
-            updateLocalVideoState(participant)
+            localParticipant = participant
+            updateLocalVideoState()
         } else {
             choosePreferredRemoteParticipant()
         }
@@ -174,15 +185,7 @@ class WebRTCActivity: AppCompatActivity() {
             addListener(callClientListener)
         }
 
-        lifecycleScope.launch {
-            callClient.updateInputs(
-                inputSettings = InputSettingsUpdate(
-                    // TODO:: Enable this microphone
-                    microphone = Disable(),
-                    camera = Enable()
-                )
-            )
-        }
+        updateInputSettings(cameraFacing)
 
         setupParticipantSubscriptionProfiles()
 
@@ -198,6 +201,33 @@ class WebRTCActivity: AppCompatActivity() {
                 callClient.leave()
                 finish()
             }
+        }
+    }
+
+    private fun updateInputSettings(cameraFacing: CameraFacing) {
+        this.cameraFacing = cameraFacing
+        val cameraSettings = if (cameraFacing == CameraFacing.Front)
+            CameraInputSettingsUpdate(
+                isEnabled = Enable(),
+                settings = VideoMediaTrackSettingsUpdate(
+                    facingMode = FacingModeUpdate.user
+                )
+            )
+        else
+            CameraInputSettingsUpdate(
+                isEnabled = Enable(),
+                settings = VideoMediaTrackSettingsUpdate(
+                    facingMode = FacingModeUpdate.environment
+                )
+            )
+
+        lifecycleScope.launch {
+            callClient.updateInputs(
+                inputSettings = InputSettingsUpdate(
+                    microphone = Disable(),
+                    camera = cameraSettings
+                )
+            )
         }
     }
 
@@ -301,8 +331,8 @@ class WebRTCActivity: AppCompatActivity() {
         }
     }
 
-    private fun updateLocalVideoState(participant: Participant) {
-        participant.media?.camera?.track?.let { track ->
+    private fun updateLocalVideoState() {
+        localParticipant?.media?.camera?.track?.let { track ->
             localVideoView.track = track
         }
     }
@@ -318,7 +348,7 @@ class WebRTCActivity: AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        callClient.release()
+//        callClient.release()
     }
 
     private fun checkPermissions() {
@@ -339,5 +369,10 @@ class WebRTCActivity: AppCompatActivity() {
             // permission is granted, we can initialize
             initCallClient()
         }
+    }
+
+    enum class CameraFacing {
+        Front,
+        Rear
     }
 }
